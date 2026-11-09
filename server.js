@@ -9,8 +9,13 @@ const SYSTEM_PROMPT = require("./stmPrompt");
 const connectDB = require("./config/db")
 const User = require("./models/User");
 const Attendance = require("./models/Attendance");
+const ChatMessage = require("./models/ChatMessage");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const path = require("path");
+
+app.set("view engine", "ejs");
+app.set("views", path.join(__dirname, "views"));
 
 // OpenAI client
 const openai = new OpenAI({
@@ -21,12 +26,79 @@ const openai = new OpenAI({
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use("/downloads", express.static("downloads"));
 
 // Home route
 app.get("/", (req, res) => {
   res.json({
     message: "ExpenseWeb server is running!"
   });
+});
+//--multiple--function--
+function getChatExpiryDate(dateKey) {
+    const [year, month, day] = dateKey.split("-").map(Number);
+
+    // 3 calendar days ke baad midnight IST
+    const expiryUTC = Date.UTC(
+        year,
+        month - 1,
+        day + 3
+    ) - (5.5 * 60 * 60 * 1000);
+
+    return new Date(expiryUTC);
+}
+
+function getThreeDayStartDate(dateKey) {
+    const [year, month, day] = dateKey.split("-").map(Number);
+
+    const cutoffUTC = Date.UTC(
+        year,
+        month - 1,
+        day - 2
+    );
+
+    return new Date(cutoffUTC).toISOString().slice(0, 10);
+}
+//--App--version--
+const APP_VERSION = {
+    latestVersion: "1.0.0",
+    versionCode: 1,
+    minimumVersionCode: 1,
+
+    apkUrl: "https://yourdomain.com/downloads/ArenaAI-v1.0.0.apk",
+
+    releaseNotes: [
+        "Arena AI initial release",
+        "Attendance management",
+        "AI assistant"
+    ]
+};
+
+//--download--app--page--
+app.get("/", (req, res) => {
+    res.render("index", {
+        title: "Arena AI",
+        description: "Smart Attendance Management Platform",
+        appPath: "/downloads/ArenaAI-v1.0.0.apk"
+    });
+});
+
+//--App--version--check--
+app.get("/api/version/check", (req, res) => {
+    try {
+        return res.status(200).json({
+            success: true,
+            ...APP_VERSION
+        });
+
+    } catch (error) {
+        console.error("Version Check Error:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Unable to check app version"
+        });
+    }
 });
 
 //--time-zone--function--
@@ -475,6 +547,7 @@ app.post("/auth/login", async (req, res) => {
 });
 
 //--Lpgged-in--User--
+
 app.post("/my/chat", authMiddleware, async (req, res) => {
     try {
         const message = req.body?.message;
@@ -495,6 +568,42 @@ app.post("/my/chat", authMiddleware, async (req, res) => {
             });
         }
 
+        const userId = user._id;
+        const today = getIndiaDateKey();
+        const expiryDate = getChatExpiryDate(today);
+        const cutoffDate = getThreeDayStartDate(today);
+
+        // 1. Previous 3 days ki conversation retrieve karo
+        const previousMessages = await ChatMessage.find({
+            userId,
+            dateKey: {
+                $gte: cutoffDate,
+                $lte: today
+            }
+        })
+        .sort({ createdAt: -1 })
+        .limit(30)
+        .lean();
+
+        // Oldest to newest order
+        previousMessages.reverse();
+
+        // 2. Current user message MongoDB mein save karo
+        await ChatMessage.create({
+            userId,
+            role: "user",
+            content: message.trim(),
+            dateKey: today,
+            expiresAt: expiryDate
+        });
+
+        // 3. AI ke liye conversation history prepare karo
+        const conversationHistory = previousMessages.map(msg => ({
+            role: msg.role,
+            content: msg.content
+        }));
+
+        // 4. AI ko system prompt + old conversation + current message bhejo
         const result = await askAI([
             {
                 role: "system",
@@ -511,25 +620,45 @@ This user is already logged in.
 Never show registration or login forms.
 If the user asks to login or register, politely explain
 that they are already logged in.
+
+CONVERSATION MEMORY:
+You are receiving previous messages from this user's conversation.
+Use them to understand context and continue naturally.
+Do not unnecessarily ask the user to repeat information.
+Do not invent previous conversations or personal details.
 `
             },
+
+            ...conversationHistory,
+
             {
                 role: "user",
                 content: message.trim()
             }
         ]);
 
-        // Logged-in user ke liye allowed actions
+        // 5. Authenticated user ke allowed actions
         const authenticatedActions = [
             "NONE",
             "MARK_ATTENDANCE",
-            "SHOW_ATTENDANCE"
+            "SHOW_ATTENDANCE",
+            "CHANGE_PASSWORD"
         ];
 
         const action = authenticatedActions.includes(result.action)
             ? result.action
             : "NONE";
 
+        // 6. AI response bhi MongoDB mein save karo
+        await ChatMessage.create({
+            userId,
+            role: "assistant",
+            content: result.reply,
+            dateKey: today,
+            expiresAt: expiryDate
+        });
+
+        // 7. Frontend ko response bhejo
         return res.json({
             success: true,
             reply: result.reply,
@@ -545,6 +674,7 @@ that they are already logged in.
         });
     }
 });
+
 
 //--Attendance--Mark-=
 app.post("/attendance/mark", authMiddleware, async (req, res) => {
