@@ -1,0 +1,271 @@
+:root {
+  --background--color: #000;
+  --primary--color: #484DFF;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: "Red Hat Text", sans-serif;
+  color: #fff;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+}
+
+.page {
+  width: 100%;
+  height: 100%;
+  background: var(--background--color);
+  padding: 30px;
+}
+
+.page4 {
+  width: 100%;
+  height: 5rem;
+  background: var(--background--color);
+  padding: 30px;
+}
+
+.page1 .nav {
+  width: 100%;
+  height: 12rem;
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+}
+
+.page1 .nav h1 {
+  font-size: 40px;
+}
+
+.page1 .nav h1 span {
+  color: #484dff;
+}
+
+.page1 .nav p {
+  color: gray;
+  font-size: 15px;
+  margin-top: 20px;
+}
+
+.page1 .box {
+  width: 100%;
+  height: 10rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.page1 .box .app-icon {
+  width: 130px;
+  height: 130px;
+  border-radius: 20px;
+  background-image: url(/app-icon.png);
+  background-size: cover;
+  background-position: center;
+  box-shadow: 0 0 20px #484DFF;
+}
+
+.page1 .box p {
+  font-size: 15px;
+  color: gray;
+}
+
+.page1 .cards {
+  margin-top: 40px;
+  width: 100%;
+  height: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.page1 .cards .card {
+  width: 100%;
+  height: 8rem;
+  border-radius: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  padding: 20px;
+  background: #222;
+  border: 1px solid #484DFF;
+}
+
+.page1 .cards .card i {
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #494dff;
+  border-radius: 5px;
+  margin-bottom: 7px;
+}
+
+.page2 h2 {
+  margin-bottom: 30px;
+}
+
+.page2 .cards {
+  width: 100%;
+  height: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  gap: 30px;
+}
+
+.page2 .cards .card {
+  width: 100%;
+  height: 6rem;
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  padding: 20px;
+  background: #222;
+  border-bottom: 1px solid #fff;
+  border-radius: 15px;
+}
+
+.page2 .cards .card h3 {
+  margin-bottom: 7px;
+}
+
+.page2 .cards .card:nth-child(1) p,
+.page2 .cards .card:nth-child(2) p,
+.page2 .cards .card:nth-child(6) p {
+  color: #FF8C00;
+}
+
+.page2 .cards .card:nth-child(3) p,
+.page2 .cards .card:nth-child(4) p,
+.page2 .cards .card:nth-child(5) p {
+  color: #15AA00;
+}
+
+.page2 .cards .card:nth-child(1) button,
+.page2 .cards .card:nth-child(2) button {
+  border: 1px solid #13FF00;
+  background: rgba(14, 141, 3, 0.4);
+}
+
+.page2 .cards .card button {
+  padding: 4px 10px;
+  border: 1px solid #1F00FF;
+  background: rgba(0, 34, 136, 0.4);
+  border-radius: 15px;
+}
+
+.page3 h2 {
+  margin-bottom: 10px;
+}
+
+.page3 p {
+  color: gray;
+  margin-bottom: 20px;
+}
+
+.page3 .future {
+  padding: 4px 10px;
+  border: 1px solid #FF3D00;
+  background: rgba(136, 63, 0, 0.4);
+  border-radius: 15px;
+  margin-bottom: 15px;
+}
+
+.page3 ul{
+  margin-left: 16px;
+  margin-bottom: 50px;
+}
+.page3 ul li{
+  font-size: 20px;
+  color: #8C9AFF;
+}
+
+.page3 .box {
+  width: 100%;
+  height: 11rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border-radius: 10px;
+  padding: 20px;
+  gap: 5px;
+  background: #111;
+  margin-top: 50px;
+}
+
+.page3 .box h1 {
+  margin-bottom: 8px;
+}
+
+.page3 .box h3 {
+  margin-bottom: 5px;
+}
+
+.page3 .box span {
+  font-size: 13px;
+  color: gray;
+}
+
+.page3 .box p {
+  margin: 0;
+}
+
+.page3 .app-box {
+  width: 100%;
+  height: 14rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.page3 .app-box .app-icon {
+  width: 130px;
+  height: 130px;
+  border-radius: 20px;
+  background-image: url(/app-icon.png);
+  background-size: cover;
+  background-position: center;
+  box-shadow: 0 0 20px #484DFF;
+}
+
+.page3 .app-box p {
+  font-size: 15px;
+  color: gray;
+  margin-top: 10px;
+}
+
+.page3 .app-box button{
+  padding: 13px 30px;
+  background: #4C62FF;
+  border-radius: 30px;
+  color: #fff;
+  font-size: 20px;
+  font-weight: 600;
+  border: none;
+  outline: none;
+  transition: 0.3s;
+  transform: scale(1);
+}
+.page3 .app-box button:hover {
+  background: #7082FF;
+  transform: scale(0.95);
+}
+
+.page3 .app-box button:active {
+  transform: scale(1.1);
+  background: #3548D9;
+  box-shadow: 0 2px 8px rgba(76, 98, 255, 0.4);
+}

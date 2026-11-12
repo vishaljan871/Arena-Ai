@@ -26,13 +26,12 @@ const openai = new OpenAI({
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(express.static(path.join(__dirname, "public")));
 app.use("/downloads", express.static("downloads"));
 
 // Home route
 app.get("/", (req, res) => {
-  res.json({
-    message: "ExpenseWeb server is running!"
-  });
+  res.render("home");
 });
 //--multiple--function--
 function getChatExpiryDate(dateKey) {
@@ -81,6 +80,75 @@ app.get("/", (req, res) => {
         description: "Smart Attendance Management Platform",
         appPath: "/downloads/ArenaAI-v1.0.0.apk"
     });
+});
+
+//--Natural--VoiceFor--ElevenLabs--
+app.post("/voice/speak",  async (req, res) => {
+    try {
+        const { text } = req.body;
+
+        if (!text || typeof text !== "string") {
+            return res.status(400).json({
+                success: false,
+                message: "Text is required"
+            });
+        }
+
+        if (text.length > 5000) {
+            return res.status(400).json({
+                success: false,
+                message: "Text is too long"
+            });
+        }
+
+        const response = await fetch(
+            `https://api.elevenlabs.io/v1/text-to-speech/${process.env.ELEVENLABS_VOICE_ID}?output_format=mp3_44100_128`,
+            {
+                method: "POST",
+                headers: {
+                    "xi-api-key": process.env.ELEVENLABS_API_KEY,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    text,
+                    model_id: "eleven_multilingual_v2",
+                    voice_settings: {
+                        stability: 0.5,
+                        similarity_boost: 0.8,
+                        style: 0.2,
+                        use_speaker_boost: true
+                    }
+                })
+            }
+        );
+
+        if (!response.ok) {
+            const error = await response.text();
+            console.error("ElevenLabs Error:", error);
+
+            return res.status(502).json({
+                success: false,
+                message: "Voice generation failed"
+            });
+        }
+
+        const audioBuffer = Buffer.from(
+            await response.arrayBuffer()
+        );
+
+        res.setHeader("Content-Type", "audio/mpeg");
+        res.setHeader("Content-Length", audioBuffer.length);
+
+        return res.send(audioBuffer);
+
+    } catch (error) {
+        console.error("Voice Route Error:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Unable to generate voice"
+        });
+    }
 });
 
 //--App--version--check--
@@ -152,22 +220,14 @@ function authMiddleware(req, res, next) {
     }
 }
 
-//--AI--Function--
-//--Allowed--actions--
-const allowedActions = [
-    "NONE",
-    "SHOW_REGISTER_FORM",
-    "SHOW_LOGIN_FORM",
-    "MARK_ATTENDANCE",
-    "SHOW_ATTENDANCE"
-];
 
-//--AI--Function--
+
+//-- AI Function --
 async function askAI(messages) {
     const response = await openai.chat.completions.create({
         model: "openai/gpt-4o-mini",
         messages: messages,
-        max_tokens: 300,
+        max_tokens: 1500,
         response_format: {
             type: "json_object"
         }
@@ -181,22 +241,18 @@ async function askAI(messages) {
         return {
             reply: typeof result.reply === "string"
                 ? result.reply
-                : "Hello! Main aapki kya madad kar sakta hoon?",
-
-            action: allowedActions.includes(result.action)
-                ? result.action
-                : "NONE"
+                : "Hello! Main aapki kya madad kar sakta hoon?"
         };
 
     } catch (error) {
         console.error("AI JSON Parse Error:", aiText);
 
         return {
-            reply: aiText,
-            action: "NONE"
+            reply: "Sorry, mujhe response samajhne mein problem hui."
         };
     }
 }
+
 
 //--Auth--Me--
 app.get("/auth/me", authMiddleware, async (req, res) => {
@@ -234,6 +290,7 @@ app.get("/auth/me", authMiddleware, async (req, res) => {
 });
 
 //--AI-Guest-Chat--
+
 app.post("/guest/chat", async (req, res) => {
     try {
         const message = req.body?.message;
@@ -245,20 +302,54 @@ app.post("/guest/chat", async (req, res) => {
             });
         }
 
+        // 1. Current India date
+        const today = getIndiaDateKey();
+
+        const [year, month, day] = today.split("-").map(Number);
+
+        const currentDate = new Intl.DateTimeFormat("en-IN", {
+            timeZone: "Asia/Kolkata",
+            weekday: "long",
+            day: "numeric",
+            month: "long",
+            year: "numeric"
+        }).format(
+            new Date(Date.UTC(year, month - 1, day, 12))
+        );
+
+        // 2. AI request
         const result = await askAI([
             {
                 role: "system",
                 content: `${SYSTEM_PROMPT}
+
+CURRENT DATE AND TIME:
+Date: ${currentDate}
+Date Key: ${today}
+Timezone: Asia/Kolkata (IST, UTC+05:30)
 
 CURRENT USER CONTEXT:
 Authentication status: GUEST
 Currently logged in: NO
 Existing account status: UNKNOWN
 
-Remember:
-A guest may already have a registered account.
-Never assume the user is unregistered.
-For a first greeting, suggest both registration and login.
+IMPORTANT RULES:
+- The user is not currently logged in.
+- Never assume the user is unregistered.
+- For a first greeting, suggest both registration and login.
+- Do not claim access to private account or attendance data.
+- If the user asks about their personal account information,
+  explain that they need to login first.
+- Today's date is ${currentDate}.
+- Never guess today's date.
+- You only generate conversational replies.
+- Never generate or execute frontend actions.
+- Never return action names or action instructions.
+
+Return only this JSON structure:
+{
+    "reply": "Your natural language response"
+}
 `
             },
             {
@@ -267,21 +358,19 @@ For a first greeting, suggest both registration and login.
             }
         ]);
 
-        // Guest ke liye sirf ye actions allowed hain
-        const guestActions = [
-            "NONE",
-            "SHOW_REGISTER_FORM",
-            "SHOW_LOGIN_FORM"
-        ];
+        // 3. AI reply
+        const reply = result?.reply;
 
-        const action = guestActions.includes(result.action)
-            ? result.action
-            : "NONE";
+        if (typeof reply !== "string" || !reply.trim()) {
+            throw new Error("Invalid AI reply received.");
+        }
 
+        // 4. Frontend response
         return res.json({
             success: true,
-            reply: result.reply,
-            action
+            reply,
+            currentDate,
+            dateKey: today
         });
 
     } catch (error) {
@@ -293,6 +382,7 @@ For a first greeting, suggest both registration and login.
         });
     }
 });
+
 
 //--Check--Username--Availability--
 app.get("/auth/check-username", async (req, res) => {
@@ -559,7 +649,10 @@ app.post("/my/chat", authMiddleware, async (req, res) => {
             });
         }
 
-        const user = await User.findById(req.user.userId);
+        // 1. Authenticated user find karo
+        const user = await User.findById(req.user.userId)
+            .select("fullname username email isActive createdAt")
+            .lean();
 
         if (!user || !user.isActive) {
             return res.status(401).json({
@@ -570,10 +663,20 @@ app.post("/my/chat", authMiddleware, async (req, res) => {
 
         const userId = user._id;
         const today = getIndiaDateKey();
+
+	const [year, month, day] = today.split("-").map(Number);
+	const currentDate = new Intl.DateTimeFormat("en-IN", {
+    	   timeZone: "Asia/Kolkata",
+           weekday: "long",
+    	   day: "numeric",
+    	   month: "long",
+    	   year: "numeric"
+	}).format(new Date(Date.UTC(year, month - 1, day, 12)));
+
         const expiryDate = getChatExpiryDate(today);
         const cutoffDate = getThreeDayStartDate(today);
 
-        // 1. Previous 3 days ki conversation retrieve karo
+        // 2. Previous 3 days ki conversation
         const previousMessages = await ChatMessage.find({
             userId,
             dateKey: {
@@ -585,10 +688,46 @@ app.post("/my/chat", authMiddleware, async (req, res) => {
         .limit(30)
         .lean();
 
-        // Oldest to newest order
         previousMessages.reverse();
 
-        // 2. Current user message MongoDB mein save karo
+        // 3. Current user ka attendance data
+        const attendanceRecords = await Attendance.find({
+            userId
+        })
+        .select("dateKey status advance")
+        .sort({ dateKey: -1 })
+        .limit(100)
+        .lean();
+
+        // 4. Attendance summary calculate karo
+        const presentDays = attendanceRecords.filter(
+            record => record.status === "present"
+        ).length;
+
+        const absentDays = attendanceRecords.filter(
+            record => record.status === "absent"
+        ).length;
+
+        const totalAdvance = attendanceRecords.reduce(
+            (total, record) => total + (Number(record.advance) || 0),
+            0
+        );
+
+        const attendanceSummary = {
+            recordsProvided: attendanceRecords.length,
+            presentDays,
+            absentDays,
+            totalAdvance
+        };
+
+        // 5. Current user context
+        const userContext = {
+            account: user,
+            attendanceSummary,
+            attendanceRecords
+        };
+
+        // 6. Current message MongoDB mein save karo
         await ChatMessage.create({
             userId,
             role: "user",
@@ -597,36 +736,47 @@ app.post("/my/chat", authMiddleware, async (req, res) => {
             expiresAt: expiryDate
         });
 
-        // 3. AI ke liye conversation history prepare karo
+        // 7. Conversation history
         const conversationHistory = previousMessages.map(msg => ({
             role: msg.role,
             content: msg.content
         }));
 
-        // 4. AI ko system prompt + old conversation + current message bhejo
+        // 8. AI request
         const result = await askAI([
             {
                 role: "system",
-                content: `${SYSTEM_PROMPT}
+		content: `${SYSTEM_PROMPT}
 
-CURRENT USER CONTEXT:
-Authentication status: AUTHENTICATED
-Currently logged in: YES
-Fullname: ${user.fullname}
-Existing account: YES
+CURRENT DATE AND TIME:
+Date: ${currentDate}
+Date Key: ${today}
+Timezone: Asia/Kolkata (IST, UTC+05:30)
 
-Remember:
-This user is already logged in.
-Never show registration or login forms.
-If the user asks to login or register, politely explain
-that they are already logged in.
+CURRENT USER DATA:
+${JSON.stringify(userContext)}
 
-CONVERSATION MEMORY:
-You are receiving previous messages from this user's conversation.
-Use them to understand context and continue naturally.
-Do not unnecessarily ask the user to repeat information.
-Do not invent previous conversations or personal details.
+IMPORTANT RULES:
+- The user is authenticated.
+- Answer questions using only the supplied user data.
+- Never invent account details or attendance records.
+- Never reveal passwords, password hashes or tokens.
+- Attendance records provided are limited to the latest 100 records.
+- Do not assume unmarked days are absent.
+- Calculate totals only from the supplied records.
+- If requested information is unavailable, clearly say so.
+- Today's date is ${currentDate}.
+- Never guess today's date.
+- You only generate conversational replies.
+- Never generate or execute frontend actions.
+- Never return action names or action instructions.
+
+Return only this JSON structure:
+{
+    "reply": "Your natural language response"
+}
 `
+
             },
 
             ...conversationHistory,
@@ -637,32 +787,37 @@ Do not invent previous conversations or personal details.
             }
         ]);
 
-        // 5. Authenticated user ke allowed actions
-        const authenticatedActions = [
-            "NONE",
-            "MARK_ATTENDANCE",
-            "SHOW_ATTENDANCE",
-            "CHANGE_PASSWORD"
-        ];
+        // 9. AI reply extract karo
+        let reply;
 
-        const action = authenticatedActions.includes(result.action)
-            ? result.action
-            : "NONE";
+        if (typeof result === "string") {
+            try {
+                const parsed = JSON.parse(result);
+                reply = parsed.reply || result;
+            } catch {
+                reply = result;
+            }
+        } else {
+            reply = result?.reply;
+        }
 
-        // 6. AI response bhi MongoDB mein save karo
+        if (typeof reply !== "string" || !reply.trim()) {
+            throw new Error("Invalid AI reply received.");
+        }
+
+        // 10. AI reply MongoDB mein save karo
         await ChatMessage.create({
             userId,
             role: "assistant",
-            content: result.reply,
+            content: reply,
             dateKey: today,
             expiresAt: expiryDate
         });
 
-        // 7. Frontend ko response bhejo
+        // 11. Frontend response
         return res.json({
             success: true,
-            reply: result.reply,
-            action
+            reply
         });
 
     } catch (error) {
