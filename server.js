@@ -625,7 +625,7 @@ app.post("/my/chat", authMiddleware, async (req, res) => {
         const attendanceRecords = await Attendance.find({
             userId
         })
-        .select("dateKey status advance")
+	.select("dateKey shiftType status advance")
         .sort({ dateKey: -1 })
         .limit(100)
         .lean();
@@ -763,68 +763,135 @@ Return only this JSON structure:
 
 
 //--Attendance--Mark-=
+
 app.post("/attendance/mark", authMiddleware, async (req, res) => {
-  try {
-    const { status } = req.body;
-    const isAdvanceEmpty =
-      req.body.advance === undefined ||
-      req.body.advance === null ||
-      req.body.advance === "";
-    const advance = isAdvanceEmpty ? 0 : Number(req.body.advance);
-    if (!["present", "absent"].includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: "Please select Present or Absent.",
-      });
+    try {
+        const { status, shiftType, attendanceDate } = req.body;
+
+        const isAdvanceEmpty =
+            req.body.advance === undefined ||
+            req.body.advance === null ||
+            req.body.advance === "";
+
+        const advance = isAdvanceEmpty ? 0 : Number(req.body.advance);
+
+        // Validate status
+        if (!["present", "absent"].includes(status)) {
+            return res.status(400).json({
+                success: false,
+                message: "Please select Present or Absent."
+            });
+        }
+
+        // Validate shift
+        if (!["day", "night"].includes(shiftType)) {
+            return res.status(400).json({
+                success: false,
+                message: "Please select a valid shift."
+            });
+        }
+
+        // Validate advance
+        if (!Number.isFinite(advance) || advance < 0) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid advance amount."
+            });
+        }
+
+        // Get current India date
+        const todayKey = getIndiaDateKey();
+
+        // Calculate yesterday using calendar date
+        const [year, month, day] = todayKey.split("-").map(Number);
+
+        const yesterday = new Date(
+            Date.UTC(year, month - 1, day - 1)
+        );
+
+        const yesterdayKey = [
+            yesterday.getUTCFullYear(),
+            String(yesterday.getUTCMonth() + 1).padStart(2, "0"),
+            String(yesterday.getUTCDate()).padStart(2, "0")
+        ].join("-");
+
+        // Determine allowed attendance date
+        const expectedDate =
+            shiftType === "day" ? todayKey : yesterdayKey;
+
+        // Verify frontend date
+        if (attendanceDate !== expectedDate) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid attendance date for selected shift."
+            });
+        }
+
+        const userId = req.user.userId;
+        const dateKey = expectedDate;
+
+        // Check duplicate attendance
+        const existingAttendance = await Attendance.findOne({
+            userId,
+            dateKey,
+            shiftType
+        });
+
+        if (existingAttendance) {
+            return res.status(409).json({
+                success: false,
+                marked: true,
+                message: "Attendance for this shift has already been marked.",
+                attendance: existingAttendance
+            });
+        }
+
+console.log("Attendance Data:", {
+    userId,
+    dateKey,
+    shiftType,
+    status,
+    advance
+});
+
+        // Create attendance
+        const attendance = await Attendance.create({
+            userId,
+            dateKey,
+            shiftType,
+            status,
+            advance
+        });
+
+        return res.status(201).json({
+            success: true,
+            marked: true,
+            message: "Attendance marked successfully!",
+            attendance: {
+                id: attendance._id,
+                date: attendance.dateKey,
+                shiftType: attendance.shiftType,
+                status: attendance.status,
+                advance: attendance.advance
+            }
+        });
+
+    } catch (error) {
+        console.error("Attendance Error:", error);
+
+        if (error.code === 11000) {
+            return res.status(409).json({
+                success: false,
+                marked: true,
+                message: "Attendance for this shift has already been marked."
+            });
+        }
+
+        return res.status(500).json({
+            success: false,
+            message: "Unable to mark attendance."
+        });
     }
-    if (!Number.isFinite(advance) || advance < 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid advance amount.",
-      });
-    }
-    const userId = req.user.userId;
-    const dateKey = getIndiaDateKey();
-    const existingAttendance = await Attendance.findOne({ userId, dateKey });
-    if (existingAttendance) {
-      return res.status(409).json({
-        success: false,
-        marked: true,
-        message: "You have already marked attendance today.",
-        attendance: existingAttendance,
-      });
-    }
-    const attendance = await Attendance.create({
-      userId,
-      dateKey,
-      status,
-      advance,
-    });
-    return res.status(201).json({
-      success: true,
-      marked: true,
-      message: "Attendance marked successfully!",
-      attendance: {
-        id: attendance._id,
-        date: attendance.dateKey,
-        status: attendance.status,
-        advance: attendance.advance,
-      },
-    });
-  } catch (error) {
-    console.error("Attendance Error:", error);
-    if (error.code === 11000) {
-      return res.status(409).json({
-        success: false,
-        marked: true,
-        message: "You have already marked attendance today.",
-      });
-    }
-    return res.status(500).json({
-      success: false,
-      message: "Unable to mark attendance.",
-    });
-  }
 });
 
 //--Attendance--Today--

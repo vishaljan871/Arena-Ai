@@ -14,6 +14,12 @@ const attendanceSchema = new mongoose.Schema(
             required: true
         },
 
+        shiftType: {
+            type: String,
+            enum: ["day", "night"],
+            required: true
+        },
+
         status: {
             type: String,
             enum: ["present", "absent"],
@@ -31,10 +37,16 @@ const attendanceSchema = new mongoose.Schema(
     }
 );
 
-// Ek user ki ek date par sirf ek attendance
+// One attendance per user, date and shift
 attendanceSchema.index(
-    { userId: 1, dateKey: 1 },
-    { unique: true }
+    {
+        userId: 1,
+        dateKey: 1,
+        shiftType: 1
+    },
+    {
+        unique: true
+    }
 );
 
 module.exports = mongoose.model("Attendance", attendanceSchema);
