@@ -4,12 +4,14 @@ const mongoose = require("mongoose");
 const donationSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
-    default: null
+    ref: "User",
+    required: true
   },
 
   username: {
     type: String,
-    default: "Anonymous Supporter"
+    required: true,
+    trim: true
   },
 
   isPublic: {
@@ -55,7 +57,5 @@ const donationSchema = new mongoose.Schema({
   }
 });
 
-const Donation = mongoose.model("Donation", donationSchema);
-
-module.exports = Donation;
+module.exports = mongoose.model("Donation", donationSchema);
 

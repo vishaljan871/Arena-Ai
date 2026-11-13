@@ -170,17 +170,19 @@ app.get("/", (req, res) => {
 
 app.get("/donations/leaderboard", async (req, res) => {
   try {
-    const donations = await Donation.find({
-      status: "paid",
-      isPublic: true
-    })
-      .select("username amount status createdAt")
-      .sort({
-        amount: -1,
-        createdAt: -1
-      })
-      .limit(50)
-      .lean();
+
+const donations = await Donation.find({
+  status: "paid",
+  isPublic: true,
+  userId: { $ne: null }
+})
+  .select("username amount status createdAt")
+  .sort({
+    amount: -1,
+    createdAt: -1
+  })
+  .limit(50)
+  .lean();
 
     res.json({
       success: true,
@@ -198,9 +200,19 @@ app.get("/donations/leaderboard", async (req, res) => {
 });
 
 //--Donation--create-Order--
-
-app.post("/donations/create-order", async (req, res) => {
+app.post("/donations/create-order", authMiddleware, async (req, res) => {
   try {
+    // Get actual logged-in user from MongoDB
+    const user = await User.findById(req.user.userId)
+      .select("username isActive");
+
+    if (!user || !user.isActive) {
+      return res.status(401).json({
+        success: false,
+        message: "User not found or account disabled."
+      });
+    }
+
     const amount = Number(req.body.amount);
 
     // Amount validation
@@ -215,7 +227,6 @@ app.post("/donations/create-order", async (req, res) => {
       });
     }
 
-    // Convert rupees into paise
     const amountInPaise = amount * 100;
 
     // Create Razorpay order
@@ -224,22 +235,23 @@ app.post("/donations/create-order", async (req, res) => {
       currency: "INR",
       receipt: `don_${crypto.randomUUID()}`,
       notes: {
-        purpose: "Voluntary Development Donation"
+        purpose: "Voluntary Development Donation",
+        userId: user._id.toString()
       }
     });
 
-    // Save pending donation in MongoDB
+    // Save actual user identity
     await Donation.create({
-      userId: req.user?._id || null,
-      username: req.user?.username || "Anonymous Supporter",
-      isPublic: req.body.isPublic !== false,
+      userId: user._id,
+      username: user.username,
+      isPublic: true,
       orderId: order.id,
-      amount: amountInPaise,
-      currency: "INR",
+      amount: order.amount,
+      currency: order.currency,
       status: "created"
     });
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       keyId: process.env.RAZORPAY_KEY_ID,
       orderId: order.id,
@@ -250,7 +262,7 @@ app.post("/donations/create-order", async (req, res) => {
   } catch (error) {
     console.error("Create order error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Unable to create payment order."
     });
@@ -258,8 +270,7 @@ app.post("/donations/create-order", async (req, res) => {
 });
 
 //--Donayion--Verify--Payment--
-
-app.post("/donations/verify-payment", async (req, res) => {
+app.post("/donations/verify-payment", authMiddleware, async (req, res) => {
   try {
     const {
       razorpay_order_id,
@@ -279,9 +290,10 @@ app.post("/donations/verify-payment", async (req, res) => {
     }
 
     // Find original donation order
-    const donation = await Donation.findOne({
-      orderId: razorpay_order_id
-    });
+const donation = await Donation.findOne({
+  orderId: razorpay_order_id,
+  userId: req.user.userId
+});
 
     if (!donation) {
       return res.status(404).json({
