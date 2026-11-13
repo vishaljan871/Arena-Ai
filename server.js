@@ -3,6 +3,8 @@ require("dotenv").config();
 const express = require("express");
 const OpenAI = require("openai");
 const cors = require("cors");
+const Razorpay = require("razorpay");
+const crypto = require("crypto");
 const app = express();
 const PORT = process.env.PORT || 3000;
 const SYSTEM_PROMPT = require("./stmPrompt");
@@ -10,6 +12,8 @@ const connectDB = require("./config/db")
 const User = require("./models/User");
 const Attendance = require("./models/Attendance");
 const ChatMessage = require("./models/ChatMessage");
+const Donation = require("./models/Donation");
+
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const path = require("path");
@@ -22,6 +26,72 @@ const openai = new OpenAI({
   apiKey: process.env.AI_API_KEY,
   baseURL: "https://openrouter.ai/api/v1"
 });
+
+// CORS
+app.use(cors({
+  origin: process.env.CLIENT_ORIGIN?.split(",") || "*"
+}));
+
+//--Razorpay--configration--
+const razorpay = new Razorpay({
+  key_id: process.env.RAZORPAY_KEY_ID,
+  key_secret: process.env.RAZORPAY_KEY_SECRET
+});
+
+//--Razorpay--Webhook--
+app.post(
+  "/donations/webhoock",
+  express.raw({ type: "application/json" }),
+  async (req, res) => {
+    try {
+      const signature = req.headers["x-razorpay-signature"];
+
+      const expectedSignature = crypto
+        .createHmac("sha256", process.env.RAZORPAY_WEBHOOK_SECRET)
+        .update(req.body)
+        .digest("hex");
+
+      const received = Buffer.from(signature || "", "hex");
+      const expected = Buffer.from(expectedSignature, "hex");
+
+      if (
+        !received.length ||
+        received.length !== expected.length ||
+        !crypto.timingSafeEqual(received, expected)
+      ) {
+        return res.status(400).send("Invalid webhook signature");
+      }
+
+      const event = JSON.parse(req.body.toString());
+
+      if (event.event === "payment.captured") {
+        const payment = event.payload.payment.entity;
+
+        await Donation.findOneAndUpdate(
+          {
+            orderId: payment.order_id,
+            amount: payment.amount,
+            currency: payment.currency,
+            status: { $ne: "paid" }
+          },
+          {
+            $set: {
+              status: "paid",
+              paymentId: payment.id,
+              paidAt: new Date()
+            }
+          }
+        );
+      }
+
+      res.json({ received: true });
+
+    } catch (error) {
+      console.error("Webhook error:", error);
+      res.status(500).send("Webhook processing failed");
+    }
+  }
+);
 
 // Middleware
 app.use(cors());
@@ -81,6 +151,213 @@ app.get("/", (req, res) => {
         appPath: "/downloads/ArenaAI-v1.0.0.apk"
     });
 });
+
+//--Donation--Lederboard--
+
+app.get("/donations/leaderboard", async (req, res) => {
+  try {
+    const donations = await Donation.find({
+      status: "paid",
+      isPublic: true
+    })
+      .select("username amount status createdAt")
+      .sort({
+        amount: -1,
+        createdAt: -1
+      })
+      .limit(50)
+      .lean();
+
+    res.json({
+      success: true,
+      donations
+    });
+
+  } catch (error) {
+    console.error("Leaderboard error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Unable to load leaderboard."
+    });
+  }
+});
+
+//--Donation--create-Order--
+
+app.post("/donations/create-order", async (req, res) => {
+  try {
+    const amount = Number(req.body.amount);
+
+    // Amount validation
+    if (
+      !Number.isSafeInteger(amount) ||
+      amount < 19 ||
+      amount > 100000
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Donation must be between ₹19 and ₹100000."
+      });
+    }
+
+    // Convert rupees into paise
+    const amountInPaise = amount * 100;
+
+    // Create Razorpay order
+    const order = await razorpay.orders.create({
+      amount: amountInPaise,
+      currency: "INR",
+      receipt: `don_${crypto.randomUUID()}`,
+      notes: {
+        purpose: "Voluntary Development Donation"
+      }
+    });
+
+    // Save pending donation in MongoDB
+    await Donation.create({
+      userId: req.user?._id || null,
+      username: req.user?.username || "Anonymous Supporter",
+      isPublic: req.body.isPublic !== false,
+      orderId: order.id,
+      amount: amountInPaise,
+      currency: "INR",
+      status: "created"
+    });
+
+    res.status(201).json({
+      success: true,
+      keyId: process.env.RAZORPAY_KEY_ID,
+      orderId: order.id,
+      amount: order.amount,
+      currency: order.currency
+    });
+
+  } catch (error) {
+    console.error("Create order error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Unable to create payment order."
+    });
+  }
+});
+
+//--Donayion--Verify--Payment--
+
+app.post("/donations/verify-payment", async (req, res) => {
+  try {
+    const {
+      razorpay_order_id,
+      razorpay_payment_id,
+      razorpay_signature
+    } = req.body;
+
+    if (
+      !razorpay_order_id ||
+      !razorpay_payment_id ||
+      !razorpay_signature
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing payment details."
+      });
+    }
+
+    // Find original donation order
+    const donation = await Donation.findOne({
+      orderId: razorpay_order_id
+    });
+
+    if (!donation) {
+      return res.status(404).json({
+        success: false,
+        message: "Donation order not found."
+      });
+    }
+
+    // Prevent duplicate processing
+    if (donation.status === "paid") {
+      return res.json({
+        success: true,
+        message: "Payment already verified."
+      });
+    }
+
+    // Generate expected signature
+    const generatedSignature = crypto
+      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+      .digest("hex");
+
+    // Timing-safe signature comparison
+    const received = Buffer.from(razorpay_signature, "hex");
+    const expected = Buffer.from(generatedSignature, "hex");
+
+    if (
+      received.length !== expected.length ||
+      !crypto.timingSafeEqual(received, expected)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid payment signature."
+      });
+    }
+
+    // Fetch actual payment from Razorpay
+    const payment = await razorpay.payments.fetch(
+      razorpay_payment_id
+    );
+
+    // Verify payment belongs to this order
+    if (
+      payment.order_id !== razorpay_order_id ||
+      payment.amount !== donation.amount ||
+      payment.currency !== donation.currency
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Payment details do not match."
+      });
+    }
+
+    // Payment is not captured yet
+    if (payment.status !== "captured") {
+      if (payment.status === "authorized") {
+        donation.status = "authorized";
+        donation.paymentId = razorpay_payment_id;
+        await donation.save();
+      }
+
+      return res.status(202).json({
+        success: false,
+        pending: true,
+        message: "Payment is not captured yet."
+      });
+    }
+
+    // Mark successful donation
+    donation.status = "paid";
+    donation.paymentId = razorpay_payment_id;
+    donation.paidAt = new Date();
+
+    await donation.save();
+
+    res.json({
+      success: true,
+      message: "Payment verified successfully."
+    });
+
+  } catch (error) {
+    console.error("Payment verification error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Payment verification failed. Please check again."
+    });
+  }
+});
+
 
 //--App--version--check--
 app.get("/api/version/check", (req, res) => {

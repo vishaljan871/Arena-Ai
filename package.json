@@ -20,6 +20,7 @@
     "express": "^5.3.0",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.11.4",
-    "openai": "^7.39.0"
+    "openai": "^7.39.0",
+    "razorpay": "^2.9.8"
   }
 }
