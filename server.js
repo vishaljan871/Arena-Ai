@@ -28,8 +28,13 @@ const openai = new OpenAI({
 });
 
 // CORS
+const allowedOrigins = (process.env.CLIENT_ORIGIN || "")
+  .split(",")
+  .map(origin => origin.trim())
+  .filter(Boolean);
+
 app.use(cors({
-  origin: process.env.CLIENT_ORIGIN?.split(",") || "*"
+  origin: allowedOrigins.length ? allowedOrigins : "*"
 }));
 
 //--Razorpay--configration--
