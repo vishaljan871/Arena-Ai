@@ -34,7 +34,16 @@ const allowedOrigins = (process.env.CLIENT_ORIGIN || "")
   .filter(Boolean);
 
 app.use(cors({
-  origin: allowedOrigins.length ? allowedOrigins : "*"
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error("CORS blocked: " + origin));
+  },
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true
 }));
 
 //--Razorpay--configration--
