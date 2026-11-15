@@ -9,7 +9,6 @@ const userSchema = new mongoose.Schema(
       minlength: 3,
       maxlength: 60
     },
-
     username: {
       type: String,
       required: true,
@@ -19,7 +18,6 @@ const userSchema = new mongoose.Schema(
       minlength: 3,
       maxlength: 30
     },
-
     email: {
       type: String,
       required: true,
@@ -27,34 +25,26 @@ const userSchema = new mongoose.Schema(
       lowercase: true,
       trim: true
     },
-
     password: {
       type: String,
       required: true,
       select: false
     },
-
     role: {
       type: String,
       enum: ["user", "admin"],
       default: "user"
     },
-
     isActive: {
       type: Boolean,
       default: true
     },
-
     lastLogin: {
       type: Date,
       default: null
     }
   },
-  {
-    timestamps: true
-  }
+  { timestamps: true }
 );
 
-const User = mongoose.model("User", userSchema);
-
-module.exports = User;
+module.exports = mongoose.model("User", userSchema);

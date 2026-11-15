@@ -1,10 +1,7 @@
-
 const jwt = require("jsonwebtoken");
 
 function authMiddleware(req, res, next) {
   try {
-
-    // Authorization header
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -14,7 +11,6 @@ function authMiddleware(req, res, next) {
       });
     }
 
-    // Extract token
     const token = authHeader.split(" ")[1];
 
     if (!token) {
@@ -24,29 +20,18 @@ function authMiddleware(req, res, next) {
       });
     }
 
-    // Verify JWT
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_SECRET
-    );
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // Validate user ID
-    if (!decoded.id) {
+    if (!decoded.userId) {
       return res.status(401).json({
         success: false,
         message: "Invalid token payload."
       });
     }
 
-    // Attach authenticated user
-    req.user = {
-      id: decoded.id
-    };
-
+    req.user = { userId: decoded.userId };
     next();
-
   } catch (error) {
-
     if (error.name === "TokenExpiredError") {
       return res.status(401).json({
         success: false,
@@ -58,9 +43,7 @@ function authMiddleware(req, res, next) {
       success: false,
       message: "Invalid authentication token."
     });
-
   }
 }
 
 module.exports = authMiddleware;
-

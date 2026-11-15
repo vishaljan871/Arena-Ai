@@ -67,7 +67,7 @@ body {
   width: 130px;
   height: 130px;
   border-radius: 20px;
-  background-image: url(/app-icon.png);
+  background-image: url(/images/app-icon.png);
   background-size: cover;
   background-position: center;
   box-shadow: 0 0 20px #484DFF;
@@ -236,7 +236,7 @@ body {
   width: 130px;
   height: 130px;
   border-radius: 20px;
-  background-image: url(/app-icon.png);
+  background-image: url(/images/app-icon.png);
   background-size: cover;
   background-position: center;
   box-shadow: 0 0 20px #484DFF;
@@ -270,3 +270,4 @@ body {
   background: #3548D9;
   box-shadow: 0 2px 8px rgba(76, 98, 255, 0.4);
 }
+
