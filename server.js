@@ -48,6 +48,14 @@ app.get("/", (req, res) => {
   res.render("home");
 });
 
+app.get("/wake-up", (req, res) => {
+    res.status(200).json({
+        status: "online",
+        message: "Server is running",
+        timestamp: new Date().toISOString()
+    });
+});
+
 app.use(routes);
 
 // ---------- 404 + error handling ----------
